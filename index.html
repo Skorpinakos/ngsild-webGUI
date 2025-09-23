@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NGSI-LD Mini Editor</title>
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --panel-2: #f7f9ff;
+      --text: #0b1020;
+      --muted: #4b5565;
+
+      /* Brand / button colors */
+      --primary: #1e66f5;   /* blue */
+      --primary-600: #1656d1;
+      --secondary: #1f2937; /* slate-800 */
+      --secondary-600: #111827;
+
+      --ok: #059669;        /* green-600 */
+      --ok-600: #047857;
+      --warn: #b45309;      /* amber-700 */
+      --warn-600: #92400e;
+      --danger: #b91c1c;    /* red-700 */
+      --danger-600: #991b1b;
+
+      --radius: 14px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+
+    html, body {
+      margin: 0;
+      background:
+        radial-gradient(1200px 600px at 15% -10%, #eaf0ff, transparent 60%),
+        radial-gradient(800px 400px at 100% 0%, #eef3ff, transparent 60%),
+        var(--bg);
+      color: var(--text);
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      line-height: 1.5;
+    }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(1200px 600px at 15% -10%, #1a2352, transparent 60%),
+        radial-gradient(800px 400px at 100% 0%, #13204b, transparent 60%),
+        var(--bg);
+      color: var(--text);
+      line-height: 1.45;
+    }
+    .container { max-width: 1200px; margin: 24px auto 96px; padding: 0 16px; }
+    h1 { font-weight: 800; letter-spacing: -0.02em; }
+
+    .toolbar {
+      background: linear-gradient(180deg, rgba(0,0,0,0.02), rgba(0,0,0,0.005)), var(--panel);
+      border: 1px solid rgba(0,0,0,0.08);
+      box-shadow: 0 10px 24px rgba(0,0,0,0.06);
+      border-radius: var(--radius);
+      padding: 16px;
+      display: grid; gap: 10px; grid-template-columns: 1fr auto; align-items: center;
+    }
+    .row { display: grid; grid-template-columns: 1fr auto; gap: 10px; }
+    .inline { display:flex; align-items:center; gap:8px; }
+    .toolbar input[type="text"] {
+      width: 100%; padding: 12px; border-radius: 10px;
+      border: 1px solid rgba(0,0,0,0.12);
+      background: var(--panel-2); color: var(--text);
+    }
+
+    /* ---------- Buttons (shared visuals) ---------- */
+    .btn, .btn-sm {
+      --bg: var(--secondary);
+      --bg-hover: var(--secondary-600);
+      --ring: rgba(30,102,245,0.45);
+      border: 1px solid rgba(0,0,0,0.14);
+      background: var(--bg);
+      color: #ffffff;
+      border-radius: 12px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 6px 14px rgba(0,0,0,0.08);
+      transition: transform .06s ease, filter .12s ease, background .12s ease, box-shadow .12s ease;
+      will-change: transform, filter;
+      white-space: nowrap;
+    }
+    .btn { padding: 12px 16px; font-weight: 600; }
+    .btn-sm { padding: 8px 12px; font-size: 13px; font-weight: 600; border-radius: 10px; }
+
+    /* Variants */
+    .primary { --bg: var(--primary); --bg-hover: var(--primary-600); }
+    .secondary { --bg: var(--secondary); --bg-hover: var(--secondary-600); }
+    .ok { --bg: var(--ok); --bg-hover: var(--ok-600); }
+    .warn { --bg: var(--warn); --bg-hover: var(--warn-600); }
+    .danger { --bg: var(--danger); --bg-hover: var(--danger-600); }
+
+    .btn:hover, .btn-sm:hover { background: var(--bg-hover); filter: brightness(1.03); transform: translateY(-1px); }
+    .btn:active, .btn-sm:active { transform: translateY(0); filter: brightness(0.98); }
+    .btn:focus-visible, .btn-sm:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px var(--ring);
+    }
+    .btn[disabled], .btn-sm[disabled] { opacity: 0.6; cursor: not-allowed; filter: saturate(0.7); transform: none; }
+
+    .ico {
+      width: 16px; height: 16px; display:inline-block; flex: 0 0 16px;
+      fill: currentColor; stroke: currentColor;
+    }
+    .btn .ico { width: 18px; height: 18px; }
+    .btn-label { line-height: 1; }
+
+    .tips { font-size: 12px; color: var(--muted); }
+    .context-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; }
+
+    /* vertical stack of cards */
+    .grid { margin-top: 24px; display: block; }
+    .card {
+      background: var(--panel);
+      border: 1px solid #e4e9f3;
+      border-radius: var(--radius);
+      padding: 18px; position: relative;
+      margin-bottom: 24px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.06);
+    }
+    /* Accent bar to differentiate entities */
+    .card::before {
+      content: "";
+      position: absolute; left: 0; top: 0; height: 100%; width: 6px;
+      background: linear-gradient(180deg, var(--primary), #059669);
+      border-top-left-radius: var(--radius);
+      border-bottom-left-radius: var(--radius);
+    }
+
+    /* =======================
+       Editable textareas
+       ======================= */
+    .attr .jsonArea,
+    #newEntityJson {
+      width: 100%;
+      min-height: 44px;
+      max-height: 200px;
+      resize: vertical;
+      overflow-y: auto;
+      box-sizing: border-box;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(0,0,0,0.12);
+      background: var(--panel-2);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.45;
+      tab-size: 2;
+    }
+    .name { font-weight: 600; }
+  </style>
+</head>
+<body>
+  <!-- SVG icon sprite -->
+  <svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="ico-load" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M3 17v2a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-2"/>
+    </symbol>
+    <symbol id="ico-prev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M15 19l-7-7 7-7"/>
+    </symbol>
+    <symbol id="ico-next" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M9 5l7 7-7 7"/>
+    </symbol>
+    <symbol id="ico-save" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+      <path d="M17 21V10H7v11M7 3v4h8"/>
+    </symbol>
+    <symbol id="ico-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M3 6h18"/><path d="M8 6v-2a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+      <path d="M10 11v6M14 11v6"/>
+    </symbol>
+    <symbol id="ico-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M12 5v14M5 12h14"/>
+    </symbol>
+    <symbol id="ico-reload" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5"/>
+    </symbol>
+    <symbol id="ico-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M18 6L6 18M6 6l12 12"/>
+    </symbol>
+    <symbol id="ico-template" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M7 9v11"/>
+    </symbol>
+    <symbol id="ico-entity" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="7" r="4"/><path d="M5.5 21a6.5 6.5 0 0 1 13 0z"/>
+    </symbol>
+    <symbol id="ico-add-attr" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <rect x="4" y="4" width="16" height="12" rx="2"/><path d="M12 20v-4M10 18h4"/>
+    </symbol>
+  </svg>
+
+  <div class="container">
+    <h1>NGSI-LD Mini Editor</h1>
+
+    <div class="toolbar">
+      <div class="row">
+        <input id="queryUrl" type="text"
+               value="http://localhost:7073/ngsi-ld/v1/entities?idPattern=.*v18.*&limit=999"
+               placeholder="Query URL e.g. http://localhost:7072/ngsi-ld/v1/entities?idPattern=.*" />
+        <button class="btn primary" id="btnLoad">
+          <svg class="ico"><use href="#ico-load"/></svg>
+          <span class="btn-label">Load</span>
+        </button>
+        <div class="inline" style="margin-left:auto; gap:6px;">
+          <input id="searchBox" type="text" placeholder="Search id / type / attr…" style="width:260px"/>
+          <button class="btn-sm secondary" id="btnPrev" title="Previous match">
+            <svg class="ico"><use href="#ico-prev"/></svg><span class="btn-label">Prev</span>
+          </button>
+          <button class="btn-sm secondary" id="btnNext" title="Next match">
+            <svg class="ico"><use href="#ico-next"/></svg><span class="btn-label">Next</span>
+          </button>
+          <span id="matchCount" class="tips"></span>
+        </div>
+      </div>
+      <div class="context-row">
+        <input id="jsonldContext" type="text" placeholder="Optional JSON-LD @context URL(s), comma-separated (for PATCH/POST Link header)" />
+        <div class="inline" style="gap:8px; margin-left:20px;">
+          <button class="btn-sm ok" id="btnCreateEntity">
+            <svg class="ico"><use href="#ico-entity"/></svg><span class="btn-label">Create entity</span>
+          </button>
+
+        </div>
+      </div>
+    </div>
+
+    <div id="status" class="status"></div>
+    <div id="cards" class="grid"></div>
+    <div class="footer">Inline edit • delete attr/entity • create attr/entity by JSON</div>
+  </div>
+
+  <!-- Create Entity Modal -->
+  <div id="modalBackdrop" class="modal-backdrop" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.35); align-items:center; justify-content:center; z-index:50;">
+    <div class="modal" style="background:var(--panel); border:1px solid rgba(0,0,0,0.08); border-radius:16px; padding:16px; width:min(800px, 92vw); box-shadow:0 24px 60px rgba(0,0,0,0.25);">
+      <header class="inline" style="justify-content:space-between;">
+        <h3 style="margin:0;">Create NGSI-LD Entity</h3>
+        <button class="btn-sm secondary" id="btnCloseModal">
+          <svg class="ico"><use href="#ico-close"/></svg><span class="btn-label">Close</span>
+        </button>
+      </header>
+      <div style="display:grid; gap:8px; margin-top:12px;">
+        <input id="newEntityId" type="text" placeholder="(Optional) Force @id in JSON; otherwise provide in JSON body" style="padding:10px 12px; border-radius:10px; border:1px solid rgba(0,0,0,0.12); background:var(--panel-2);" />
+        <textarea id="newEntityJson" placeholder='Paste full entity JSON (including "id" and "type"), optionally with "@context". Example:\n{\n  "id":"urn:ngsi-ld:Device:123",\n  "type":"Device",\n  "temperature":{"type":"Property","value":21.7}\n}' rows="16"></textarea>
+      </div>
+      <footer class="inline" style="justify-content:space-between; margin-top:12px;">
+        <button class="btn-sm secondary" id="btnModalUseTemplate">
+          <svg class="ico"><use href="#ico-template"/></svg><span class="btn-label">Insert template</span>
+        </button>
+        <button class="btn-sm ok" id="btnSubmitEntity">
+          <svg class="ico"><use href="#ico-plus"/></svg><span class="btn-label">POST /entities</span>
+        </button>
+      </footer>
+    </div>
+  </div>
+
+<script>
+  const $ = (q, el=document) => el.querySelector(q);
+  const $$ = (q, el=document) => Array.from(el.querySelectorAll(q));
+
+  function showStatus(msg, kind='ok') {
+    const s = $('#status');
+    s.innerHTML = `<span class="${kind}">${msg}</span>`;
+  }
+
+  function parseContexts() {
+    const txt = $('#jsonldContext').value.trim();
+    if (!txt) return [];
+    return txt.split(',').map(s => s.trim()).filter(Boolean);
+  }
+
+  function buildLinkHeader(contexts) {
+    if (!contexts || !contexts.length) return undefined;
+    return contexts
+      .map(c => `<${c}>; rel="http://www.w3.org/ns/json-ld#context"; type="application/ld+json"`)
+      .join(', ');
+  }
+
+  function baseFromEntitiesUrl(u) {
+    try {
+      const url = new URL(u);
+      const idx = url.pathname.indexOf('/entities');
+      if (idx === -1) return null;
+      return `${url.origin}${url.pathname.substring(0, idx)}`; // e.g. http://host:7072/ngsi-ld/v1
+    } catch (e) { return null; }
+  }
+
+  async function loadEntities() {
+    const url = $('#queryUrl').value.trim();
+    if (!url) return showStatus('Please enter a query URL.', 'err');
+    showStatus('Loading…');
+    try {
+      const res = await fetch(url, { headers: { 'Accept': 'application/ld+json, application/json' } });
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      let data = await res.json();
+      if (!Array.isArray(data)) data = [data];
+      renderEntities(data, baseFromEntitiesUrl(url));
+      showStatus(`Loaded ${data.length} entit${data.length===1?'y':'ies'}.`);
+      if ($('#searchBox').value.trim()) doSearch();
+    } catch (e) {
+      console.error(e);
+      showStatus(`Load failed: ${e.message}`, 'err');
+    }
+  }
+
+  function renderEntities(entities, apiBase) {
+    const wrap = $('#cards');
+    wrap.innerHTML = '';
+
+    entities.forEach(ent => {
+      const card = document.createElement('div');
+      card.className = 'card';
+
+      const id = ent.id; const type = ent.type;
+      const entityCtx = ent['@context'];
+      const reserved = new Set(['id','type','@context']);
+      const attrs = Object.keys(ent).filter(k => !reserved.has(k)).sort();
+
+      card.innerHTML = `
+        <h3 class="entity-id" data-search="id">${escapeHtml(id)}</h3>
+        <div class="meta inline" style="justify-content:space-between;">
+          <span class="entity-type" data-search="type">${escapeHtml(type || '(no type)')}</span>
+          <span class="inline">
+            <button class="btn-sm warn doDeleteEntity" title="DELETE entity" style="margin-bottom:10px;">
+              <svg class="ico"><use href="#ico-trash"/></svg><span class="btn-label">Delete entity</span>
+            </button>
+          </span>
+        </div>
+        <div class="attr-list"></div>
+        <div class="attr" style="margin-top:12px;">
+          <div class="name">Add new attribute</div>
+          <div class="row" style="margin-top:8px; grid-template-columns: 240px 1fr;">
+            <input class="newAttrName" type="text" placeholder="attributeName" style="padding:10px 12px; border-radius:10px; border:1px solid rgba(0,0,0,0.12); background:var(--panel-2);" />
+            <input class="newAttrJson" type="text" placeholder='{"type":"Property","value":123}' style="padding:10px 12px; border-radius:10px; border:1px solid rgba(0,0,0,0.12); background:var(--panel-2);" />
+          </div>
+          <div class="actions" style="margin-top:8px;">
+            <button class="btn-sm ok doAddAttr">
+              <svg class="ico"><use href="#ico-add-attr"/></svg><span class="btn-label">Add attribute</span>
+            </button>
+          </div>
+        </div>
+      `;
+
+      const list = $('.attr-list', card);
+      if (attrs.length === 0) {
+        list.innerHTML = '<div class="tips">No attributes.</div>';
+      } else {
+        attrs.forEach(name => list.appendChild(renderAttr(id, name, ent[name], apiBase, entityCtx)));
+      }
+
+      // Wire entity-level actions
+      $('.doDeleteEntity', card).addEventListener('click', async (ev) => {
+        const ok = confirm(`Delete entity\n${id}?`);
+        if (!ok) return;
+        const btn = ev.currentTarget;
+        const lbl = btn.querySelector('.btn-label');
+        try {
+          lbl.textContent = 'Deleting…'; btn.disabled = true;
+          showStatus('Deleting entity…');
+          const res = await fetch(`${apiBase}/entities/${encodeURIComponent(id)}`, { method: 'DELETE' });
+          if (!res.ok) {
+            const t = await safeText(res);
+            throw new Error(`DELETE entity failed (${res.status}) ${t}`);
+          }
+          showStatus(`Deleted entity ${id}`);
+          card.remove();
+        } catch (e) {
+          showStatus(String(e.message || e), 'err');
+        } finally {
+          btn.disabled = false; lbl.textContent = 'Delete entity';
+        }
+      });
+
+      $('.doAddAttr', card).addEventListener('click', async (ev) => {
+        const btn = ev.currentTarget; const lbl = btn.querySelector('.btn-label');
+        const name = $('.newAttrName', card).value.trim();
+        const json = $('.newAttrJson', card).value.trim();
+        if (!name) return showStatus('Attribute name is required.', 'err');
+        let parsed; try { parsed = JSON.parse(json); } catch(e){ return showStatus('New attribute JSON invalid: '+e.message, 'err'); }
+        try {
+          btn.disabled = true; lbl.textContent = 'Adding…';
+          const userContexts = parseContexts();
+          const knownCtx = userContexts.length ? userContexts : arrayifyContext(entityCtx);
+          const link = buildLinkHeader(knownCtx);
+          const body = { [name]: parsed };
+          if (knownCtx && knownCtx.length) { body['@context'] = knownCtx.length === 1 ? knownCtx[0] : knownCtx; }
+          const headers = {};
+          if (knownCtx && knownCtx.length) { headers['Content-Type'] = 'application/ld+json'; if (link) headers['Link'] = link; }
+          else { headers['Content-Type'] = 'application/json'; }
+          const res = await fetch(`${apiBase}/entities/${encodeURIComponent(id)}/attrs`, { method: 'PATCH', headers, body: JSON.stringify(body) });
+          if (!res.ok) { const t = await safeText(res); throw new Error(`Add attribute failed (${res.status}) ${t}`); }
+          showStatus(`Added attribute ${name} on ${id}`);
+          list.appendChild(renderAttr(id, name, parsed, apiBase, knownCtx));
+          $('.newAttrName', card).value = '';
+          $('.newAttrJson', card).value = '';
+        } catch (e) { showStatus(String(e.message || e), 'err'); }
+        finally { btn.disabled = false; lbl.textContent = 'Add attribute'; }
+      });
+
+      $('#cards').appendChild(card);
+    });
+  }
+
+  // RAW JSON ONLY attribute editor
+  function renderAttr(entityId, name, payload, apiBase, entityCtx) {
+    const box = document.createElement('div');
+    box.className = 'attr';
+
+    const pretty = (() => { try { return JSON.stringify(payload ?? {}, null, 2); } catch(_) { return String(payload ?? ''); } })();
+    box.innerHTML = `
+      <div class="row">
+        <div class="name" data-search="attr">${escapeHtml(name)}</div>
+        <div class="inline" style="justify-self:end; gap:6px;">
+          <button class="btn-sm ok doSaveRaw" title="PATCH /attrs">
+            <svg class="ico"><use href="#ico-save"/></svg><span class="btn-label">Save</span>
+          </button>
+          <button class="btn-sm danger doDeleteAttr" title="DELETE /attrs/{attr}">
+            <svg class="ico"><use href="#ico-trash"/></svg><span class="btn-label">Delete</span>
+          </button>
+        </div>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <textarea class="jsonArea" spellcheck="false">${escapeHtml(pretty)}</textarea>
+      </div>
+    `;
+
+    const btnSave = $('.doSaveRaw', box);
+    const btnDel  = $('.doDeleteAttr', box);
+
+    // Enable auto-resize & user resize on this textarea
+    const ta = $('.jsonArea', box);
+    enableAutoResize(ta, 200, 44);
+
+    btnSave.addEventListener('click', async () => {
+      const lbl = btnSave.querySelector('.btn-label');
+      try {
+        btnSave.disabled = true; lbl.textContent = 'Saving…';
+        const userContexts = parseContexts();
+        const knownCtx = userContexts.length ? userContexts : arrayifyContext(entityCtx);
+        const link = buildLinkHeader(knownCtx);
+
+        const txt = $('.jsonArea', box).value;
+        let parsed;
+        try { parsed = JSON.parse(txt); } catch (e) { throw new Error('Invalid JSON in raw editor: ' + e.message); }
+        const body = { [name]: parsed };
+        if (knownCtx && knownCtx.length) {
+          body['@context'] = knownCtx.length === 1 ? knownCtx[0] : knownCtx;
+        }
+        const headers = {};
+        if (knownCtx && knownCtx.length) {
+          headers['Content-Type'] = 'application/ld+json';
+          if (link) headers['Link'] = link;
+        } else {
+          headers['Content-Type'] = 'application/json';
+        }
+
+        const res = await fetch(`${apiBase}/entities/${encodeURIComponent(entityId)}/attrs`, {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+          const txt = await safeText(res);
+          throw new Error(`PATCH failed (${res.status}) ${txt}`);
+        }
+        showStatus(`Saved ${name} on ${entityId}`, 'ok');
+      } catch (e) {
+        showStatus(String(e.message || e), 'err');
+      } finally {
+        btnSave.disabled = false; lbl.textContent = 'Save';
+      }
+    });
+
+    btnDel.addEventListener('click', async () => {
+      const ok = confirm(`Delete attribute \"${name}\" from\n${entityId}?`);
+      if (!ok) return;
+      const lbl = btnDel.querySelector('.btn-label');
+      try {
+        btnDel.disabled = true; lbl.textContent = 'Deleting…';
+        const userContexts = parseContexts();
+        const knownCtx = userContexts.length ? userContexts : arrayifyContext(entityCtx);
+        const link = buildLinkHeader(knownCtx);
+        const headers = {};
+        if (knownCtx && knownCtx.length) { if (link) headers['Link'] = link; }
+        const res = await fetch(`${apiBase}/entities/${encodeURIComponent(entityId)}/attrs/${encodeURIComponent(name)}`, {
+          method: 'DELETE',
+          headers,
+        });
+        if (!res.ok) { const t = await safeText(res); throw new Error(`DELETE attribute failed (${res.status}) ${t}`); }
+        showStatus(`Deleted ${name} on ${entityId}`, 'ok');
+        box.remove();
+      } catch (e) { showStatus(String(e.message || e), 'err'); }
+      finally { btnDel.disabled = false; lbl.textContent = 'Delete'; }
+    });
+
+    return box;
+  }
+
+  function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c])); }
+  function StringifyShort(v) { try { if (typeof v === 'object') return JSON.stringify(v); return v; } catch(_) { return v; } }
+  async function safeText(res) { try { return await res.text(); } catch { return ''; } }
+  function arrayifyContext(ctx) {
+    try{
+      if (!ctx) return [];
+      if (Array.isArray(ctx)) return ctx;
+      if (typeof ctx === 'string') return [ctx];
+      return [];
+    } catch { return []; }
+  }
+
+  // ---- Search / highlight (cards only are filtered; attributes stay visible) ----
+  let __marks = [];
+  let __idx = -1;
+
+  function clearMarks() {
+    __marks.forEach(m => {
+      const parent = m.parentNode;
+      if (!parent) return;
+      parent.replaceChild(document.createTextNode(m.textContent), m);
+      parent.normalize();
+    });
+    __marks = []; __idx = -1;
+    $('#matchCount').textContent = '';
+  }
+
+  function highlightInElement(el, needle) {
+    if (!el) return;
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+    const re = new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+    let node;
+    while ((node = walker.nextNode())) {
+      const text = node.nodeValue;
+      if (!text || !re.test(text)) continue;
+      const frag = document.createDocumentFragment();
+      let lastIdx = 0;
+      text.replace(re, (m, off) => {
+        if (off > lastIdx) frag.appendChild(document.createTextNode(text.slice(lastIdx, off)));
+        const mark = document.createElement('mark'); mark.className = 'hl'; mark.textContent = m;
+        frag.appendChild(mark); __marks.push(mark);
+        lastIdx = off + m.length;
+      });
+      if (lastIdx < text.length) frag.appendChild(document.createTextNode(text.slice(lastIdx)));
+      node.parentNode.replaceChild(frag, node);
+    }
+  }
+
+  function textMatches(el, needle) {
+    if (!el) return false;
+    try {
+      const re = new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      return re.test(el.textContent || '');
+    } catch(_) { return false; }
+  }
+
+  function doSearch() {
+    clearMarks();
+    const q = $('#searchBox').value.trim();
+    const cards = $$('#cards .card');
+
+    if (!q) {
+      cards.forEach(card => { card.style.display = ''; });
+      $('#matchCount').textContent = `${cards.length}/${cards.length}`;
+      return;
+    }
+
+    let visible = 0;
+    cards.forEach(card => {
+      const idEl = $('[data-search="id"]', card);
+      const typeEl = $('[data-search="type"]', card);
+      const nameEls = $$('.attr .name', card);
+
+      const idMatch   = textMatches(idEl, q);
+      const typeMatch = textMatches(typeEl, q);
+      const attrMatch = nameEls.some(n => textMatches(n, q));
+
+      const isMatch = idMatch || typeMatch || attrMatch;
+      card.style.display = isMatch ? '' : 'none';
+      if (isMatch) {
+        visible++;
+        if (idMatch)   highlightInElement(idEl, q);
+        if (typeMatch) highlightInElement(typeEl, q);
+        nameEls.forEach(n => { if (textMatches(n, q)) highlightInElement(n, q); });
+      }
+    });
+
+    if (__marks.length) {
+      __idx = 0;
+      __marks[__idx].scrollIntoView({ behavior:'smooth', block:'center' });
+    }
+    $('#matchCount').textContent = `${visible}/${cards.length}`;
+  }
+
+  function jump(delta) {
+    if (!__marks.length) return;
+    __idx = (__idx + delta + __marks.length) % __marks.length;
+    __marks[__idx].scrollIntoView({ behavior:'smooth', block:'center' });
+  }
+
+  // ===========================
+  // Auto-resize helpers
+  // ===========================
+  function autoResizeOnce(el, maxPx = 200, minPx = 44) {
+    if (!el) return;
+    el.style.height = 'auto';
+    const next = Math.min(Math.max(el.scrollHeight, minPx), maxPx);
+    el.style.height = next + 'px';
+    el.style.overflowY = el.scrollHeight > maxPx ? 'auto' : 'hidden';
+  }
+  function enableAutoResize(el, maxPx = 200, minPx = 44) {
+    if (!el) return;
+    const handler = () => autoResizeOnce(el, maxPx, minPx);
+    el.addEventListener('input', handler);
+    // In case of programmatic value changes:
+    const ro = new ResizeObserver(() => handler());
+    ro.observe(el);
+    // Initial sizing after paint
+    requestAnimationFrame(handler);
+  }
+
+  // ---- Create entity modal ----
+  function openModal() { $('#modalBackdrop').style.display = 'flex'; }
+  function closeModal() { $('#modalBackdrop').style.display = 'none'; }
+
+  async function createEntity() {
+    try {
+      const apiBase = baseFromEntitiesUrl($('#queryUrl').value.trim());
+      if (!apiBase) throw new Error('Could not derive API base from the query URL.');
+      const raw = $('#newEntityJson').value.trim();
+      if (!raw) throw new Error('Please paste entity JSON.');
+      let body; try { body = JSON.parse(raw); } catch(e){ throw new Error('Entity JSON invalid: ' + e.message); }
+
+      // Determine contexts: prefer explicit @context in payload, else user contexts field
+      const payloadCtx = arrayifyContext(body['@context']);
+      const userCtx = parseContexts();
+      const knownCtx = payloadCtx.length ? payloadCtx : userCtx;
+      const link = buildLinkHeader(knownCtx);
+
+      const headers = {};
+      if (knownCtx && knownCtx.length) { headers['Content-Type'] = 'application/ld+json'; if (link) headers['Link'] = link; }
+      else { headers['Content-Type'] = 'application/json'; }
+
+      const res = await fetch(`${apiBase}/entities`, { method: 'POST', headers, body: JSON.stringify(body) });
+      if (!res.ok) { const t = await safeText(res); throw new Error(`POST /entities failed (${res.status}) ${t}`); }
+      showStatus(`Created entity ${escapeHtml(body.id || '')}`);
+      closeModal();
+      $('#btnLoad').click();
+    } catch (e) { showStatus(String(e.message || e), 'err'); }
+  }
+
+  // events
+  $('#btnLoad').addEventListener('click', loadEntities);
+ // $('#btnReload').addEventListener('click', loadEntities);
+  $('#queryUrl').addEventListener('keydown', (e) => { if (e.key === 'Enter') loadEntities(); });
+  $('#searchBox').addEventListener('keydown', (e) => { if (e.key === 'Enter') doSearch(); });
+  $('#btnNext').addEventListener('click', () => { if (!__marks.length) doSearch(); jump(1); });
+  $('#btnPrev').addEventListener('click', () => { if (!__marks.length) doSearch(); jump(-1); });
+
+  $('#btnCreateEntity').addEventListener('click', () => { openModal(); });
+  $('#btnCloseModal').addEventListener('click', () => { closeModal(); });
+  $('#btnSubmitEntity').addEventListener('click', () => { createEntity(); });
+  $('#btnModalUseTemplate').addEventListener('click', () => {
+    $('#newEntityJson').value = JSON.stringify({
+      id: 'urn:ngsi-ld:Device:' + Math.random().toString(36).slice(2, 8),
+      type: 'Device',
+      temperature: { type: 'Property', value: 21.7 },
+      description: { type: 'Property', value: 'New device' },
+    }, null, 2);
+    autoResizeOnce($('#newEntityJson'));
+  });
+
+  // Auto-load on first paint if URL is present
+  window.addEventListener('DOMContentLoaded', () => {
+    if ($('#queryUrl').value.trim()) loadEntities();
+    enableAutoResize($('#newEntityJson'), 200, 44);
+  });
+</script>
+</body>
+</html>
