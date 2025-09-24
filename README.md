@@ -2,7 +2,7 @@
 
 Tiny, no-deps GUI to view/edit NGSI-LD entities via the Context Broker REST API.
 
-This repo includes **two CORS proxy options** (incase your broker has no cors support) so the browser can call a broker running at
+This repo includes **two CORS proxy options** (incase your broker has no cors support, if you have cors enabled just open the index.html file) so the browser can call a broker running at
 **`http://example.com:1026`** (NGSI-LD on `/ngsi-ld/v1/...`):
 
 - `proxies/nginx/` — NGINX reverse proxy with permissive CORS (Docker Compose), listens on **:1027**.
